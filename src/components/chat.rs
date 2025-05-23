@@ -45,6 +45,7 @@ pub struct Chat {
     wss: WebsocketService,
     messages: Vec<MessageData>,
     _producer: Box<dyn Bridge<EventBus>>,
+    username: String,
 }
 impl Component for Chat {
     type Message = Msg;
@@ -78,6 +79,7 @@ impl Component for Chat {
             chat_input: NodeRef::default(),
             wss,
             _producer: EventBus::bridge(ctx.link().callback(Msg::HandleMsg)),
+            username,
         }
     }
 
@@ -115,21 +117,23 @@ impl Component for Chat {
             Msg::SubmitMessage => {
                 let input = self.chat_input.cast::<HtmlInputElement>();
                 if let Some(input) = input {
-                    //log::debug!("got input: {:?}", input.value());
-                    let message = WebSocketMessage {
-                        message_type: MsgTypes::Message,
-                        data: Some(input.value()),
-                        data_array: None,
-                    };
-                    if let Err(e) = self
-                        .wss
-                        .tx
-                        .clone()
-                        .try_send(serde_json::to_string(&message).unwrap())
-                    {
-                        log::debug!("error sending to channel: {:?}", e);
+                    if !input.value().trim().to_string().is_empty() {
+                        //log::debug!("got input: {:?}", input.value());
+                        let message = WebSocketMessage {
+                            message_type: MsgTypes::Message,
+                            data: Some(input.value()),
+                            data_array: None,
+                        };
+                        if let Err(e) = self
+                            .wss
+                            .tx
+                            .clone()
+                            .try_send(serde_json::to_string(&message).unwrap())
+                        {
+                            log::debug!("error sending to channel: {:?}", e);
+                        }
+                        input.set_value("");
                     }
-                    input.set_value("");
                 };
                 false
             }
@@ -138,6 +142,14 @@ impl Component for Chat {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let submit = ctx.link().callback(|_| Msg::SubmitMessage);
+        let onkeypress = ctx.link().batch_callback(|e: KeyboardEvent| {
+            if e.key() == "Enter" && !e.shift_key() {
+                e.prevent_default();
+                Some(Msg::SubmitMessage)
+            } else {
+                None
+            }
+        });
         html! {
             <div class="flex w-screen">
                 <div class="flex-none w-56 h-screen bg-gray-100">
@@ -163,7 +175,7 @@ impl Component for Chat {
                     }
                 </div>
                 <div class="grow h-screen flex flex-col">
-                    <div class="w-full h-14 border-b-2 border-gray-300"><div class="text-xl p-3">{"💬 Chat!"}</div></div>
+                    <div class="w-full h-14 border-b-2 border-gray-300"><div class="text-xl p-3 font-bold">{format!("💬 Welcome to the Chat, {}!", self.username)}</div></div>
                     <div class="w-full grow overflow-auto border-b-2 border-gray-300">
                         {
                             self.messages.iter().map(|m| {
@@ -175,7 +187,7 @@ impl Component for Chat {
                                             <div class="text-sm">
                                                 {m.from.clone()}
                                             </div>
-                                            <div class="text-xs text-gray-500">
+                                            <div class="text-xs text-gray-500 whitespace-pre-line">
                                                 if m.message.ends_with(".gif") {
                                                     <img class="mt-3" src={m.message.clone()}/>
                                                 } else {
@@ -189,8 +201,8 @@ impl Component for Chat {
                         }
 
                     </div>
-                    <div class="w-full h-14 flex px-3 items-center">
-                        <input ref={self.chat_input.clone()} type="text" placeholder="Message" class="block w-full py-2 pl-4 mx-3 bg-gray-100 rounded-full outline-none focus:text-gray-700" name="message" required=true />
+                    <div class="w-full min-h-[6rem] flex px-3 items-center py-2">
+                        <textarea ref={self.chat_input.clone()} placeholder="Message" class="block w-full py-2 pl-4 mx-3 bg-gray-100 rounded-lg outline-none focus:text-gray-700 resize-none" rows=4 name="message" required=true {onkeypress} />
                         <button onclick={submit} class="p-3 shadow-sm bg-blue-600 w-10 h-10 rounded-full flex justify-center items-center color-white">
                             <svg fill="#000000" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="fill-white">
                                 <path d="M0 0h24v24H0z" fill="none"></path><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
